@@ -52,31 +52,48 @@ fi
 ASSET="agentbridge-osx-$ASSET_ARCH.tar.gz"
 echo "Downloading $BASE/$ASSET ..."
 
-sudo mkdir -p "$DEST"
+# Use sudo only where the destination is not writable by the current user, so a
+# plain "no service" install into the user's own folder stays fully user-owned.
+SUDO=""
+if ! mkdir -p "$DEST" 2>/dev/null; then
+  SUDO="sudo"
+  $SUDO mkdir -p "$DEST"
+fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 curl -fL --retry 3 -o "$tmp/$ASSET" "$BASE/$ASSET"
 
 # --- unpack directly into the destination ---
 echo "Unpacking into $DEST ..."
-sudo tar -xzf "$tmp/$ASSET" -C "$DEST"
+$SUDO tar -xzf "$tmp/$ASSET" -C "$DEST"
 rm -f "$tmp/$ASSET"
 
 # The archive files carry the CI build uid; force a sane owner so the app can write
 # its runtime state (logs/) without permission errors. Drop the quarantine attribute
 # in case the archive was saved by a browser instead of curl.
-sudo chown -R root:wheel "$DEST"
-sudo chmod +x "$DEST/agent"
-sudo xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+if [ -n "$SUDO" ]; then
+  $SUDO chown -R root:wheel "$DEST"
+else
+  chown -R "$USER" "$DEST" 2>/dev/null || true
+fi
+$SUDO chmod +x "$DEST/agent"
+$SUDO xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
 # --- launchd daemon (auto-start at boot, always-on) ---
+# A system launchd daemon needs root; when the destination is a user folder and
+# no daemon is wanted, use MAC_AGENT_NO_SERVICE=1.
 if [ "$NO_SERVICE" = "0" ]; then
-  sudo mkdir -p "$DEST/logs"
-  sudo chown root:wheel "$DEST/logs"
+  if [ -z "$SUDO" ]; then
+    echo "MAC_AGENT_NO_SERVICE=0 requires root privileges (default destination /opt/agentbridge)." >&2
+    echo "Install with sudo, or unpack without a daemon: MAC_AGENT_NO_SERVICE=1 $0" >&2
+    exit 1
+  fi
+  $SUDO mkdir -p "$DEST/logs"
+  $SUDO chown root:wheel "$DEST/logs"
   LABEL="com.graphene-lab.agentbridge"
   PLIST="/Library/LaunchDaemons/$LABEL.plist"
   echo "Installing launchd daemon ($LABEL, auto-start at boot)..."
-  sudo tee "$PLIST" >/dev/null <<EOF
+  $SUDO tee "$PLIST" >/dev/null <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
