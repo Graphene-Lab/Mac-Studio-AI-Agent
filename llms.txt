@@ -1,0 +1,32 @@
+# Mac Studio AI Agent
+
+> Mac Studio AI Agent turns an Apple silicon Mac (Mac Studio M5 Max / M5 Ultra, MacBook Pro, MacBook Air, iMac, Mac mini, Mac Pro — M1 to M5 chips with Neural Engine) into a private, self-hosted AI office assistant built on AgentBridge. It reads local documents, produces finished Word, Excel, PowerPoint and PDF files, manages email, researches the web, speaks with neural text-to-speech, chats on Telegram, schedules autonomous tasks and produces podcasts. Data stays on the Mac; with a local model (Ollama, Metal-accelerated) nothing leaves it at all.
+
+This repository is the documentation hub for the device. The README describes the product, the supported Apple hardware and the security model; the numbered guides cover every aspect in plain language for the end user.
+
+## Guides
+
+- [01 · Getting started](01-Getting-Started.md): downloading, first start, the first indexing of the documents folder
+- [02 · Choosing your AI](02-Choosing-Your-AI.md): cloud and local providers, API keys, switching at any time
+- [03 · Chatting with your agent](03-Chatting-with-Your-Agent.md): the chat window, file attachments, sessions, the web version
+- [04 · Your documents area](04-Your-Documents-Area.md): the folder the agent reads, indexing, asking questions about files
+- [05 · Creating documents](05-Creating-Documents.md): Word, Excel, PowerPoint and PDF from a plain request
+- [06 · Email](06-Email.md): reading and sending mail through the user's own account
+- [07 · Web research](07-Web-Research.md): internet search, sources and research reports
+- [08 · Voice](08-Voice.md): hearing the assistant speak; dictating requests (dictation on macOS: roadmap)
+- [09 · Phone access](09-Phone-Access.md): calling the assistant, the PIN, voice conversations (macOS: roadmap)
+- [10 · Telegram](10-Telegram.md): chatting with the assistant in Telegram, attachments both ways
+- [11 · Scheduled tasks](11-Scheduled-Tasks.md): deadlines and recurring work the agent executes alone
+- [12 · Podcasts](12-Podcasts.md): complete podcast episodes from one request
+- [13 · Privacy and security](13-Privacy-and-Security.md): the sandbox, anonymisation, what leaves the device
+- [14 · The agent's memory](14-The-Agents-Memory.md): how the assistant remembers facts, people and documents
+- [15 · Updates](15-Updates.md): how automatic updates work and what they never touch
+
+## Other files
+
+- [README](README.md): product overview, hardware support, getting started, FAQ and comparison
+- [Installation](INSTALL.md): prerequisites, the one-line installer, options, verification, TTS check, updates, uninstall, troubleshooting
+- [FAQ](FAQ.md): frequently asked questions about installation, usage, speech and privacy
+- [Technical notes](TECHNICAL-NOTES.md): macOS platform status and roadmap (speech recognition, phone access, code signing)
+- [License](LICENSE.md): Andrea Bruno License 1.4, terms of use
+- [Security](SECURITY.md): how to report a vulnerability privately
