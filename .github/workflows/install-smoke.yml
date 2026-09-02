@@ -1,0 +1,132 @@
+name: macOS install smoke test
+
+# Verifies on a public GitHub macOS runner that the Mac Studio AI Agent
+# installer really installs AgentBridge for Mac and that the app starts and
+# answers on macOS:
+#   1. unpack-only install (MAC_AGENT_NO_SERVICE=1, custom folder)
+#   2. binary signature/architecture probe + headless run (native, and after
+#      an ad-hoc codesign when macOS kills the unsigned binary on arm64)
+#   3. endpoint smoke: /health, /v1/models, /v1/control, /OfficeManager,
+#      /v1/audio/speech (Kokoro TTS)
+#   4. default install with the launchd daemon, health check, then uninstall
+#
+# Run manually:  gh workflow run install-smoke.yml -f version=latest
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'AgentBridge release tag to install (default: latest)'
+        required: false
+        default: latest
+
+permissions:
+  contents: read
+
+jobs:
+  install-smoke:
+    name: Install + run on macOS
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ github.event.inputs.version }}
+    steps:
+      - name: Host info
+        shell: bash
+        run: |
+          uname -srm
+          sw_vers
+          echo "host_arch=$(uname -m)" >> "$GITHUB_ENV"
+
+      - name: Install (unpack-only, custom folder)
+        shell: bash
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Graphene-Lab/Mac-Studio-AI-Agent/main/install.sh | \
+            MAC_AGENT_HOME="$RUNNER_TEMP/ab" MAC_AGENT_NO_SERVICE=1 bash
+          ls -la "$RUNNER_TEMP/ab" | head -n 25
+
+      - name: Probe binary signature / architecture
+        shell: bash
+        run: |
+          AGENT="$RUNNER_TEMP/ab/agent"
+          file "$AGENT"
+          codesign -dv "$AGENT" 2>&1 | head -n 8 || echo "(codesign: no signature)"
+          codesign --verify --strict "$AGENT" 2>&1 && echo "codesign verify: OK" || echo "codesign verify: FAILED (unsigned -> killed on arm64)"
+
+      - name: Start agent (native)
+        id: native
+        shell: bash
+        continue-on-error: true
+        run: |
+          AGENT="$RUNNER_TEMP/ab/agent"
+          "$AGENT" --headless --environment Production > "$RUNNER_TEMP/ab/agent-native.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/ab/agent.pid"
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:5290/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "native run did not start (likely unsigned binary on arm64)"
+            tail -n 30 "$RUNNER_TEMP/ab/agent-native.log" || true
+            exit 1
+          fi
+          echo "native run OK (pid $(cat "$RUNNER_TEMP/ab/agent.pid"))"
+
+      - name: Start agent (after ad-hoc codesign)
+        if: steps.native.outcome == 'failure'
+        shell: bash
+        run: |
+          AGENT="$RUNNER_TEMP/ab/agent"
+          codesign --force --sign - "$AGENT"
+          codesign -dv "$AGENT" 2>&1 | head -n 4
+          "$AGENT" --headless --environment Production > "$RUNNER_TEMP/ab/agent-signed.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/ab/agent.pid"
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:5290/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "ad-hoc signed run did not start"
+            tail -n 30 "$RUNNER_TEMP/ab/agent-signed.log" || true
+            exit 1
+          fi
+          echo "ad-hoc signed run OK (pid $(cat "$RUNNER_TEMP/ab/agent.pid"))"
+
+      - name: Endpoint smoke
+        shell: bash
+        run: |
+          set -e
+          echo "== /health ==";  curl -fsS http://localhost:5290/health; echo
+          echo "== /v1/models (first 300 chars) =="; curl -fsS http://localhost:5290/v1/models | head -c 300; echo
+          echo "== /v1/control capabilities =="; curl -fsS http://localhost:5290/v1/control | head -c 600; echo
+          echo "== /OfficeManager =="; curl -fsS -o /tmp/om.html -w 'HTTP %{http_code}, %{size_download} bytes\n' http://localhost:5290/OfficeManager
+          echo "== /v1/audio/speech (Kokoro TTS) =="
+          curl -fsS -X POST http://localhost:5290/v1/audio/speech -H 'Content-Type: application/json' \
+            -d '{"model":"kokoro","input":"Hello from Apple silicon.","voice":"af_heart"}' \
+            -o "$RUNNER_TEMP/ab/hello.wav"
+          file "$RUNNER_TEMP/ab/hello.wav"
+
+      - name: Stop the agent
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/ab/agent.pid" ]; then kill "$(cat "$RUNNER_TEMP/ab/agent.pid")" 2>/dev/null || true; fi
+          sleep 2
+
+      - name: Install with launchd daemon (default layout) + uninstall
+        shell: bash
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Graphene-Lab/Mac-Studio-AI-Agent/main/install.sh | bash
+          for i in $(seq 1 20); do
+            if curl -fsS http://localhost:5290/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:5290/health
+          echo
+          sudo launchctl print system/com.graphene-lab.agentbridge | head -n 12
+          echo "== uninstall =="
+          sudo launchctl bootout system/com.graphene-lab.agentbridge || true
+          sudo rm -f /Library/LaunchDaemons/com.graphene-lab.agentbridge.plist
+          sudo rm -rf /opt/agentbridge
+          echo "daemon smoke OK"
